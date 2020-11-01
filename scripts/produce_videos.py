@@ -27,10 +27,10 @@ object_names = (
 with open(osp.join('data', 'urls.json'), 'r') as f:
   urls = json.load(f)
 urls = urls['images']
-
+dropbox_app_key = os.environ.get('DROPBOX_APP_KEY')
 
 def upload_dropbox(lfilename, dfilename):
-  dbx = dropbox.Dropbox(os.environ['DROPBOX_APP_KEY'])
+  dbx = dropbox.Dropbox(dropbox_app_key)
   ddir, _ = osp.split(dfilename)
   ddir_exists = True
   try:
