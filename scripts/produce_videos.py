@@ -24,9 +24,19 @@ object_names = (
     'water_bottle',
     'wine_glass'
 )
+object_names = ('bowl', )
 with open(osp.join('data', 'urls.json'), 'r') as f:
   urls = json.load(f)
 urls = urls['images']
+
+ffmpeg_kwargs = {
+  'color': dict(pix_fmt='yuv420p', vcodec='libx264', crf=17),
+  'depth': dict(pix_fmt='gray16le', vcodec='ffv1'),
+}
+exts = {
+  'color': 'mp4',
+  'depth': 'mkv',
+}
 
 
 def upload_dropbox(lfilename, dfilename):
@@ -67,21 +77,20 @@ def produce_worker(task):
     dload_dir=osp.join('data', 'contactpose_data')
     data_dir = osp.join(dload_dir, p_id, object_name, 'images_full')
 
-    # download
-    downloader = ContactPoseDownloader()
-    if osp.isdir(data_dir):
-      shutil.rmtree(data_dir)
-      print('Deleted {:s}'.format(data_dir))
-    downloader.download_images(p_num, intent, dload_dir, include_objects=(object_name,))
-    status = osp.isdir(data_dir)
-    if not status:
-      print('Could not download {:s} {:s}'.format(p_id, object_name))
-      # check if the data actually exists
-      if object_name in urls[p_id]:
-        return status
-      else:
-        print('But that is OK because underlying data does not exist')
-        return True
+    # # download
+    # downloader = ContactPoseDownloader()
+    # if osp.isdir(data_dir):
+    #   shutil.rmtree(data_dir)
+    #   print('Deleted {:s}'.format(data_dir))
+    # downloader.download_images(p_num, intent, dload_dir, include_objects=(object_name,))
+    # if not osp.isdir(data_dir):
+    #   print('Could not download {:s} {:s}'.format(p_id, object_name))
+    #   # check if the data actually exists
+    #   if object_name in urls[p_id]:
+    #     return False
+    #   else:
+    #     print('But that is OK because underlying data does not exist')
+    #     return True
     
     # process
     for camera_position in ('left', 'right', 'middle'):
@@ -90,25 +99,27 @@ def produce_worker(task):
       if not osp.isdir(this_data_dir):
         print('{:s} does not have {:s} camera'.format(this_data_dir, camera_position))
         continue
-      output_filename = osp.join(this_data_dir, 'color.mp4')
-      (
-          ffmpeg
-          .input(osp.join(this_data_dir, 'color', 'frame%03d.png'), framerate=30)
-          .output(output_filename, pix_fmt='yuv420p', vcodec='libx264')
-          .overwrite_output()
-          .run()
-      )
-      print('{:s} written'.format(output_filename), flush=True)
-      shutil.rmtree(osp.join(this_data_dir, 'color'))
-      shutil.rmtree(osp.join(this_data_dir, 'depth'))
-
-      # upload
-      dropbox_path = osp.join('/', 'contactpose', 'videos_full', p_id, object_name,
-          '{:s}_color.mp4'.format(camera_name))
-      if not upload_dropbox(output_filename, dropbox_path):
-        status = False
-        break
-    return status
+      for mode in ('depth', ):
+        # video encoding
+        output_filename = osp.join(this_data_dir,
+                                   '{:s}.{:s}'.format(mode, exts[mode]))
+        (
+            ffmpeg
+            .input(osp.join(this_data_dir, mode, 'frame%03d.png'), framerate=30)
+            .output(output_filename, **ffmpeg_kwargs[mode])
+            .overwrite_output()
+            .run(cmd='/usr/local/bin/ffmpeg')
+        )
+        print('{:s} written'.format(output_filename), flush=True)
+        # shutil.rmtree(osp.join(this_data_dir, mode))
+        # # upload
+        # dropbox_path = osp.join('/', 'contactpose',
+        #                         '{:s}_videos_full'.format(mode),
+        #                         p_id, object_name,
+        #                         '{:s}_{:s}.mp4'.format(camera_name, mode))
+        # if not upload_dropbox(output_filename, dropbox_path):
+        #   return False
+    return True
   except Exception as e:
     print('Error somewhere in ', task)
     print(str(e))
@@ -158,5 +169,6 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('-p', type=int, required=True)
   parser.add_argument('--cleanup', action='store_true')
+  parser.add_argument('--no_parallel', action='store_false', dest='parallel')
   args = parser.parse_args()
-  produce((args.p, ), cleanup=args.cleanup)
+  produce((args.p, ), cleanup=args.cleanup, parallel=args.parallel)
