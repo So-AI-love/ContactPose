@@ -10,6 +10,7 @@ import argparse
 import dropbox
 import time
 import datetime
+from functools import partial
 
 osp = os.path
 intents = ('use', )
@@ -38,9 +39,10 @@ exts = {
   'depth': 'mkv',
 }
 
+dropbox_app_key = os.environ.get('DROPBOX_APP_KEY')
 
 def upload_dropbox(lfilename, dfilename):
-  dbx = dropbox.Dropbox(os.environ['DROPBOX_APP_KEY'])
+  dbx = dropbox.Dropbox(dropbox_app_key)
   ddir, _ = osp.split(dfilename)
   ddir_exists = True
   try:
@@ -70,7 +72,7 @@ def upload_dropbox(lfilename, dfilename):
   return True
 
 
-def produce_worker(task):
+def produce_worker(task, ffmpeg_path):
   try:
     p_num, intent, object_name = task
     p_id = 'full{:d}_{:s}'.format(p_num, intent)
@@ -108,7 +110,7 @@ def produce_worker(task):
             .input(osp.join(this_data_dir, mode, 'frame%03d.png'), framerate=30)
             .output(output_filename, **ffmpeg_kwargs[mode])
             .overwrite_output()
-            .run(cmd='/usr/local/bin/ffmpeg')
+            .run(cmd=ffmpeg_path)
         )
         print('{:s} written'.format(output_filename), flush=True)
         # shutil.rmtree(osp.join(this_data_dir, mode))
@@ -126,7 +128,7 @@ def produce_worker(task):
     return False
 
 
-def produce(p_nums, cleanup=False, parallel=True):
+def produce(p_nums, cleanup=False, parallel=True, ffmpeg_path='ffmpeg'):
   if cleanup:
     print('#### Cleanup mode ####')
     filename = osp.join('status.json')
@@ -145,13 +147,14 @@ def produce(p_nums, cleanup=False, parallel=True):
   else:
     tasks = list(itertools.product(p_nums, intents, object_names))
   
+  worker = partial(produce_worker, ffmpeg_path=ffmpeg_path)
   if parallel:
     p = Pool(len(object_names))
-    dones = p.map(produce_worker, tasks)
+    dones = p.map(worker, tasks)
     p.close()
     p.join()
   else:
-    dones = map(produce_worker, tasks)
+    dones = map(worker, tasks)
   
   filename = osp.join('status.json')
   d = {}
@@ -170,5 +173,6 @@ if __name__ == '__main__':
   parser.add_argument('-p', type=int, required=True)
   parser.add_argument('--cleanup', action='store_true')
   parser.add_argument('--no_parallel', action='store_false', dest='parallel')
+  parser.add_argument('--ffmpeg_path', default='ffmpeg')
   args = parser.parse_args()
   produce((args.p, ), cleanup=args.cleanup, parallel=args.parallel)

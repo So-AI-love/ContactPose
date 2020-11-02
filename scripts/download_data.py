@@ -151,8 +151,8 @@ class ContactPoseDownloader(object):
     # download and extract
     sess_dir = osp.join(dload_dir, p_id)
     if not osp.isdir(sess_dir):
-      os.mkdir(sess_dir)
-      print('Created {:s}'.format(sess_dir))
+      print('Creating {:s}'.format(sess_dir))
+    os.makedirs(sess_dir, exist_ok=True)
     print('Downloading {:s} images...'.format(p_id))
     object_names = list(self.urls['images'][p_id].keys())
     if include_objects is None:
@@ -174,8 +174,7 @@ class ContactPoseDownloader(object):
     print('Extracting...')
     for object_name, filename in tqdm(zip(include_objects, filenames)):
       obj_dir = osp.join(sess_dir, object_name)
-      if not osp.isdir(obj_dir):
-        os.mkdir(obj_dir)
+      os.makedirs(obj_dir, exist_ok=True)
       self._unzip_and_del(filename, obj_dir)
       for filename in next(os.walk(obj_dir))[-1]:
         if '.zip' not in filename:
